@@ -6,23 +6,29 @@ import os
 
 class SignPredictor:
     def __init__(self):
-        # Load ASL Model
-        self.asl_model = load_model("backend/models/ASL/asl_model.h5")
-        self.asl_labels = np.load("backend/models/ASL/labels.npy")
+        try:
+            # Load ASL Model
+            self.asl_model = load_model("backend/models/ASL/asl_model.h5")
+            self.asl_labels = np.load("backend/models/ASL/labels.npy")
+            print("DEBUG: ASL Model loaded successfully")
 
-        # Load ISL Model
-        self.isl_model = load_model("backend/models/ISL/isl_alphabet_model.h5")
-        self.isl_mean = np.load("backend/models/ISL/mean.npy")
-        self.isl_std = np.load("backend/models/ISL/std.npy")
-        self.isl_labels = [chr(i) for i in range(ord('A'), ord('Z') + 1)]
+            # Load ISL Model
+            self.isl_model = load_model("backend/models/ISL/isl_alphabet_model.h5")
+            self.isl_mean = np.load("backend/models/ISL/mean.npy")
+            self.isl_std = np.load("backend/models/ISL/std.npy")
+            self.isl_labels = [chr(i) for i in range(ord('A'), ord('Z') + 1)]
+            print("DEBUG: ISL Model loaded successfully")
+        except Exception as e:
+            print(f"DEBUG: FATAL - Error loading models: {e}")
+            raise e
 
         # MediaPipe Setup
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=2,
-            min_detection_confidence=0.8,
-            min_tracking_confidence=0.8
+            min_detection_confidence=0.7,
+            min_tracking_confidence=0.7
         )
 
     def predict(self, frame, mode="ASL"):
@@ -33,38 +39,52 @@ class SignPredictor:
             return None, 0.0
 
         if mode == "ASL":
+            # ASL original logic uses relative landmarks (lm.x - base.x)
             return self._predict_asl(results.multi_hand_landmarks[0])
         else:
-            return self._predict_isl(results.multi_hand_landmarks)
+            # ISL original logic uses Left/Right handedness specific ordering
+            return self._predict_isl(results)
 
     def _predict_asl(self, hand_landmarks):
-        data = []
-        for lm in hand_landmarks.landmark:
-            data.extend([lm.x, lm.y, lm.z])
-        
-        data = np.array(data, dtype=np.float32)
-        data = np.expand_dims(data, axis=0)
+        landmarks = []
+        base = hand_landmarks.landmark[0] # The base landmark
 
+        for lm in hand_landmarks.landmark:
+            landmarks.extend([
+                lm.x - base.x,
+                lm.y - base.y,
+                lm.z - base.z
+            ])
+        
+        data = np.array([landmarks], dtype=np.float32)
         preds = self.asl_model.predict(data, verbose=0)
         idx = np.argmax(preds)
         return self.asl_labels[idx], float(preds[0][idx])
 
-    def _predict_isl(self, multi_hand_landmarks):
-        features = []
-        # Take up to 2 hands
-        for hand_landmarks in multi_hand_landmarks[:2]:
-            for lm in hand_landmarks.landmark:
-                features.extend([lm.x, lm.y, lm.z])
+    def _predict_isl(self, results):
+        left, right = [], []
 
-        # Pad if only one hand detected
-        while len(features) < 126:
-            features.append(0.0)
+        for idx, hl in enumerate(results.multi_hand_landmarks):
+            handed = results.multi_handedness[idx].classification[0].label
+            coords = []
+            for lm in hl.landmark:
+                coords.extend([lm.x, lm.y, lm.z])
 
-        data = np.array(features, dtype=np.float32)
-        # Normalization
-        data = (data - self.isl_mean) / (self.isl_std + 1e-6)
-        data = np.expand_dims(data, axis=0)
+            if handed == "Left":
+                left = coords
+            else:
+                right = coords
 
-        preds = self.isl_model.predict(data, verbose=0)
+        # Original ISL logic pads missing hands with zeros
+        if not left:
+            left = [0.0] * 63
+        if not right:
+            right = [0.0] * 63
+
+        feature = np.array(left + right, dtype=np.float32)
+        # Normalization exactly as in original
+        feature = (feature - self.isl_mean) / (self.isl_std + 1e-6)
+        
+        preds = self.isl_model.predict(feature.reshape(1, -1), verbose=0)
         idx = np.argmax(preds)
         return self.isl_labels[idx], float(preds[0][idx])

@@ -38,28 +38,46 @@ async def translate_text(request: TranslationRequest):
 @app.websocket("/ws/predict")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    print("DEBUG: Client connected to WebSocket")
+    frame_count = 0
     try:
         while True:
             data = await websocket.receive_text()
             message = json.loads(data)
+            frame_count += 1
+            
+            if frame_count % 30 == 0:
+                print(f"DEBUG: Received {frame_count} frames so far...")
             
             # Extract image and mode
             image_data = message.get("image")
             mode = message.get("mode", "ASL")
             
             if not image_data:
+                print("DEBUG: Received message without image data")
                 continue
                 
             # Decode base64 image
-            encoded_data = image_data.split(',')[1]
-            nparr = np.frombuffer(base64.b64decode(encoded_data), np.uint8)
-            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            try:
+                encoded_data = image_data.split(',')[1]
+                nparr = np.frombuffer(base64.b64decode(encoded_data), np.uint8)
+                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            except Exception as e:
+                print(f"DEBUG: Image decoding error: {e}")
+                continue
             
             if frame is None:
+                print("DEBUG: Frame is None after decoding")
                 continue
                 
             # Predict
-            letter, confidence = predictor.predict(frame, mode=mode)
+            try:
+                letter, confidence = predictor.predict(frame, mode=mode)
+                if letter:
+                    print(f"DEBUG: Predicted {letter} with {confidence:.2f}")
+            except Exception as e:
+                print(f"DEBUG: Prediction error: {e}")
+                continue
             
             # Send back prediction
             await websocket.send_json({

@@ -20,21 +20,32 @@ const App: React.FC = () => {
   const [targetLang, setTargetLang] = useState<string>('hi');
   const [isTeaching, setIsTeaching] = useState<boolean>(false);
   const [targetLetter, setTargetLetter] = useState<string>('A');
+  const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   
   const webcamRef = useRef<Webcam>(null);
   const ws = useRef<WebSocket | null>(null);
 
   // Initialize WebSocket
   useEffect(() => {
-    ws.current = new WebSocket('ws://localhost:8000/ws/predict');
-    
-    ws.current.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.letter) {
-        setPrediction(data.letter);
-        setConfidence(data.confidence);
-      }
+    const connect = () => {
+      setWsStatus('connecting');
+      ws.current = new WebSocket('ws://localhost:8000/ws/predict');
+      
+      ws.current.onopen = () => setWsStatus('connected');
+      ws.current.onerror = () => setWsStatus('error');
+      ws.current.onclose = () => {
+        setWsStatus('connecting');
+        setTimeout(connect, 3000); // Reconnect after 3s
+      };
+
+      ws.current.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        setPrediction(data.letter || '');
+        setConfidence(data.confidence || 0);
+      };
     };
+
+    connect();
 
     return () => {
       ws.current?.close();
@@ -140,11 +151,23 @@ const App: React.FC = () => {
             ref={webcamRef}
             screenshotFormat="image/jpeg"
             className="w-full h-full object-cover"
-            videoConstraints={{ facingMode: "user" }}
+            videoConstraints={{ 
+              width: 640,
+              height: 480,
+              facingMode: "user" 
+            }}
           />
-          <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-md px-4 py-2 rounded-full flex items-center gap-2 border border-white/20">
-            <div className={`w-3 h-3 rounded-full ${prediction ? 'bg-green-500 animate-pulse' : 'bg-slate-500'}`} />
-            <span className="text-sm font-medium">{mode} Mode Active</span>
+          <div className="absolute top-4 left-4 flex flex-col gap-2">
+            <div className="bg-black/50 backdrop-blur-md px-4 py-2 rounded-full flex items-center gap-2 border border-white/20">
+              <div className={`w-3 h-3 rounded-full ${prediction ? 'bg-green-500 animate-pulse' : 'bg-slate-500'}`} />
+              <span className="text-sm font-medium">{mode} Mode Active</span>
+            </div>
+            <div className="bg-black/50 backdrop-blur-md px-4 py-1 rounded-full flex items-center gap-2 border border-white/20 w-fit">
+              <div className={`w-2 h-2 rounded-full ${wsStatus === 'connected' ? 'bg-green-400' : wsStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500 animate-pulse'}`} />
+              <span className="text-[10px] uppercase font-bold tracking-tighter">
+                {wsStatus === 'connected' ? 'Server Connected' : wsStatus === 'error' ? 'Server Error' : 'Connecting...'}
+              </span>
+            </div>
           </div>
           
           {prediction && (
