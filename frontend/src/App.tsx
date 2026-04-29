@@ -21,6 +21,7 @@ const App: React.FC = () => {
   const [isTeaching, setIsTeaching] = useState<boolean>(false);
   const [targetLetter, setTargetLetter] = useState<string>('A');
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+  const [processedImage, setProcessedImage] = useState<string | null>(null);
   
   const webcamRef = useRef<Webcam>(null);
   const ws = useRef<WebSocket | null>(null);
@@ -42,6 +43,9 @@ const App: React.FC = () => {
         const data = JSON.parse(event.data);
         setPrediction(data.letter || '');
         setConfidence(data.confidence || 0);
+        if (data.image) {
+          setProcessedImage(data.image);
+        }
       };
     };
 
@@ -146,17 +150,34 @@ const App: React.FC = () => {
       <main className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Camera Section */}
         <div className="relative rounded-2xl overflow-hidden bg-black aspect-video border-4 border-slate-800 shadow-2xl">
-          <Webcam
-            audio={false}
-            ref={webcamRef}
-            screenshotFormat="image/jpeg"
-            className="w-full h-full object-cover"
-            videoConstraints={{ 
-              width: 640,
-              height: 480,
-              facingMode: "user" 
-            }}
-          />
+          {processedImage ? (
+            <img 
+              src={processedImage} 
+              alt="Processed Feed" 
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <Webcam
+              audio={false}
+              ref={webcamRef}
+              screenshotFormat="image/jpeg"
+              className="w-full h-full object-cover"
+              videoConstraints={{ 
+                width: 640,
+                height: 480,
+                facingMode: "user" 
+              }}
+            />
+          )}
+          <div className="hidden">
+            {/* Invisible webcam for capturing frames when processed image is shown */}
+            <Webcam
+              audio={false}
+              ref={webcamRef}
+              screenshotFormat="image/jpeg"
+              videoConstraints={{ width: 640, height: 480, facingMode: "user" }}
+            />
+          </div>
           <div className="absolute top-4 left-4 flex flex-col gap-2">
             <div className="bg-black/50 backdrop-blur-md px-4 py-2 rounded-full flex items-center gap-2 border border-white/20">
               <div className={`w-3 h-3 rounded-full ${prediction ? 'bg-green-500 animate-pulse' : 'bg-slate-500'}`} />
@@ -263,7 +284,7 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-lg z-50 flex flex-col p-12">
           <div className="flex justify-between items-center mb-12">
             <div>
-              <h2 className="text-4xl font-black mb-2">Teaching Module</h2>
+              <h2 className="text-4xl font-black mb-2">{mode} Teaching Module</h2>
               <p className="text-slate-400">Master {mode} gestures through real-time feedback</p>
             </div>
             <button 
@@ -294,12 +315,20 @@ const App: React.FC = () => {
             </div>
 
             <div className="col-span-2 relative rounded-3xl overflow-hidden border-8 border-slate-900 shadow-2xl bg-black">
-              <Webcam
-                audio={false}
-                ref={webcamRef}
-                screenshotFormat="image/jpeg"
-                className="w-full h-full object-cover grayscale opacity-50"
-              />
+              {processedImage ? (
+                <img 
+                  src={processedImage} 
+                  alt="Processed Feed" 
+                  className="w-full h-full object-cover grayscale opacity-50"
+                />
+              ) : (
+                <Webcam
+                  audio={false}
+                  ref={webcamRef}
+                  screenshotFormat="image/jpeg"
+                  className="w-full h-full object-cover grayscale opacity-50"
+                />
+              )}
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 {prediction === targetLetter ? (
                   <div className="bg-green-500/20 border-4 border-green-500 backdrop-blur-md p-12 rounded-full animate-bounce">

@@ -24,6 +24,8 @@ class SignPredictor:
 
         # MediaPipe Setup
         self.mp_hands = mp.solutions.hands
+        self.mp_draw = mp.solutions.drawing_utils
+        self.mp_styles = mp.solutions.drawing_styles
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=2,
@@ -32,24 +34,31 @@ class SignPredictor:
         )
 
     def predict(self, frame, mode="ASL"):
-        # The browser sends the camera feed. 
-        # In original projects, cv2.flip(frame, 1) was used before MediaPipe.
-        # React-webcam might already be mirrored in view, but the data sent 
-        # to the backend often needs flipping to match the training orientation.
+        # Original projects flip before processing
         frame = cv2.flip(frame, 1)
         
         img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.hands.process(img_rgb)
 
-        if not results.multi_hand_landmarks:
-            return None, 0.0
+        letter, confidence = None, 0.0
 
-        if mode == "ASL":
-            # ASL original logic uses relative landmarks (lm.x - base.x)
-            return self._predict_asl(results.multi_hand_landmarks[0])
-        else:
-            # ISL original logic uses Left/Right handedness specific ordering
-            return self._predict_isl(results)
+        if results.multi_hand_landmarks:
+            # Draw landmarks exactly as in original projects
+            for hand_landmarks in results.multi_hand_landmarks:
+                self.mp_draw.draw_landmarks(
+                    frame,
+                    hand_landmarks,
+                    self.mp_hands.HAND_CONNECTIONS,
+                    self.mp_styles.get_default_hand_landmarks_style(),
+                    self.mp_styles.get_default_hand_connections_style()
+                )
+
+            if mode == "ASL":
+                letter, confidence = self._predict_asl(results.multi_hand_landmarks[0])
+            else:
+                letter, confidence = self._predict_isl(results)
+
+        return letter, confidence, frame
 
     def _predict_asl(self, hand_landmarks):
         landmarks = []

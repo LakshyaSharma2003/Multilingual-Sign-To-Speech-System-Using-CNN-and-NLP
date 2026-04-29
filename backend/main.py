@@ -72,17 +72,24 @@ async def websocket_endpoint(websocket: WebSocket):
                 
             # Predict
             try:
-                letter, confidence = predictor.predict(frame, mode=mode)
+                letter, confidence, processed_frame = predictor.predict(frame, mode=mode)
+                
+                # Encode the processed frame back to base64
+                _, buffer = cv2.imencode('.jpg', processed_frame)
+                processed_image_data = base64.b64encode(buffer).decode('utf-8')
+                processed_image_b64 = f"data:image/jpeg;base64,{processed_image_data}"
+                
                 if letter:
                     print(f"DEBUG: Predicted {letter} with {confidence:.2f}")
             except Exception as e:
                 print(f"DEBUG: Prediction error: {e}")
                 continue
             
-            # Send back prediction
+            # Send back prediction and processed image
             await websocket.send_json({
                 "letter": letter,
-                "confidence": confidence
+                "confidence": confidence,
+                "image": processed_image_b64
             })
             
     except WebSocketDisconnect:
