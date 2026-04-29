@@ -32,6 +32,12 @@ class SignPredictor:
         )
 
     def predict(self, frame, mode="ASL"):
+        # The browser sends the camera feed. 
+        # In original projects, cv2.flip(frame, 1) was used before MediaPipe.
+        # React-webcam might already be mirrored in view, but the data sent 
+        # to the backend often needs flipping to match the training orientation.
+        frame = cv2.flip(frame, 1)
+        
         img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.hands.process(img_rgb)
 
@@ -83,7 +89,7 @@ class SignPredictor:
 
         feature = np.array(left + right, dtype=np.float32)
         # Normalization exactly as in original
-        feature = (feature - self.isl_mean) / (self.isl_std + 1e-6)
+        feature = (feature - self.isl_mean) / self.isl_std
         
         preds = self.isl_model.predict(feature.reshape(1, -1), verbose=0)
         idx = np.argmax(preds)
