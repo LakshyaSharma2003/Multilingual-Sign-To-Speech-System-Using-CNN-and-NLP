@@ -2,14 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Webcam from 'react-webcam';
 import { 
   Settings, 
-  Mic2, 
   Languages, 
   Trash2, 
   BookOpen, 
-  Camera,
-  Volume2,
-  Delete,
-  Space
+  Volume2
 } from 'lucide-react';
 
 const ASL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
