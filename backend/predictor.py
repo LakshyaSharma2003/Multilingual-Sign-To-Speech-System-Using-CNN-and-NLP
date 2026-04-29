@@ -34,9 +34,9 @@ class SignPredictor:
         )
 
     def predict(self, frame, mode="ASL"):
-        # We REMOVE cv2.flip(frame, 1) because the browser (react-webcam) 
-        # is likely already sending a mirrored image. If we flip it again,
-        # it will be in the wrong orientation for the AI models.
+        # We RE-ENABLE cv2.flip(frame, 1) because the browser sends raw frames.
+        # Original models were trained on flipped/mirrored images.
+        frame = cv2.flip(frame, 1)
         
         img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.hands.process(img_rgb)

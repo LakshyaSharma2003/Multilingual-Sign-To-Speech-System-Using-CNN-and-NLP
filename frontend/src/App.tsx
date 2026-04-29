@@ -61,6 +61,7 @@ const App: React.FC = () => {
     if (webcamRef.current && ws.current?.readyState === WebSocket.OPEN) {
       const imageSrc = webcamRef.current.getScreenshot();
       if (imageSrc) {
+        // console.log("Sending frame..."); // Debug
         ws.current.send(JSON.stringify({
           image: imageSrc,
           mode: mode
@@ -128,17 +129,25 @@ const App: React.FC = () => {
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${isTeaching ? 'bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'}`}
           >
             <BookOpen size={20} />
-            Teaching Module
+            {mode} Teaching Module
           </button>
           <div className="flex bg-slate-800 rounded-lg p-1">
             <button 
-              onClick={() => setMode('ASL')}
+              onClick={() => {
+                setMode('ASL');
+                setPrediction('');
+                setConfidence(0);
+              }}
               className={`px-4 py-1 rounded-md transition ${mode === 'ASL' ? 'bg-blue-600' : 'hover:bg-slate-700'}`}
             >
               ASL
             </button>
             <button 
-              onClick={() => setMode('ISL')}
+              onClick={() => {
+                setMode('ISL');
+                setPrediction('');
+                setConfidence(0);
+              }}
               className={`px-4 py-1 rounded-md transition ${mode === 'ISL' ? 'bg-blue-600' : 'hover:bg-slate-700'}`}
             >
               ISL
@@ -150,35 +159,28 @@ const App: React.FC = () => {
       <main className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Camera Section */}
         <div className="relative rounded-2xl overflow-hidden bg-black aspect-video border-4 border-slate-800 shadow-2xl">
-          {processedImage ? (
+          <Webcam
+            audio={false}
+            ref={webcamRef}
+            screenshotFormat="image/jpeg"
+            className="w-full h-full object-cover"
+            videoConstraints={{ 
+              width: 640,
+              height: 480,
+              facingMode: "user" 
+            }}
+          />
+
+          {processedImage && (
             <img 
               src={processedImage} 
               alt="Processed Feed" 
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <Webcam
-              audio={false}
-              ref={webcamRef}
-              screenshotFormat="image/jpeg"
-              className="w-full h-full object-cover"
-              videoConstraints={{ 
-                width: 640,
-                height: 480,
-                facingMode: "user" 
-              }}
+              className="absolute inset-0 w-full h-full object-cover"
             />
           )}
-          <div className="hidden">
-            {/* Invisible webcam for capturing frames when processed image is shown */}
-            <Webcam
-              audio={false}
-              ref={webcamRef}
-              screenshotFormat="image/jpeg"
-              videoConstraints={{ width: 640, height: 480, facingMode: "user" }}
-            />
-          </div>
+
           <div className="absolute top-4 left-4 flex flex-col gap-2">
+
             <div className="bg-black/50 backdrop-blur-md px-4 py-2 rounded-full flex items-center gap-2 border border-white/20">
               <div className={`w-3 h-3 rounded-full ${prediction ? 'bg-green-500 animate-pulse' : 'bg-slate-500'}`} />
               <span className="text-sm font-medium">{mode} Mode Active</span>
@@ -315,20 +317,21 @@ const App: React.FC = () => {
             </div>
 
             <div className="col-span-2 relative rounded-3xl overflow-hidden border-8 border-slate-900 shadow-2xl bg-black">
-              {processedImage ? (
+              <Webcam
+                audio={false}
+                ref={webcamRef}
+                screenshotFormat="image/jpeg"
+                className="w-full h-full object-cover grayscale opacity-50"
+              />
+              
+              {processedImage && (
                 <img 
                   src={processedImage} 
                   alt="Processed Feed" 
-                  className="w-full h-full object-cover grayscale opacity-50"
-                />
-              ) : (
-                <Webcam
-                  audio={false}
-                  ref={webcamRef}
-                  screenshotFormat="image/jpeg"
-                  className="w-full h-full object-cover grayscale opacity-50"
+                  className="absolute inset-0 w-full h-full object-cover grayscale opacity-50"
                 />
               )}
+
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 {prediction === targetLetter ? (
                   <div className="bg-green-500/20 border-4 border-green-500 backdrop-blur-md p-12 rounded-full animate-bounce">
