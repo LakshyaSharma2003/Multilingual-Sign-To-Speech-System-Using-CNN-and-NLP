@@ -53,14 +53,22 @@ async def websocket_endpoint(websocket: WebSocket):
             image_data = message.get("image")
             mode = message.get("mode", "ASL")
             
-            if not image_data:
-                print("DEBUG: Received message without image data")
+            if not image_data or ',' not in image_data:
+                print("DEBUG: Received malformed image data")
                 continue
                 
             # Decode base64 image
             try:
-                encoded_data = image_data.split(',')[1]
-                nparr = np.frombuffer(base64.b64decode(encoded_data), np.uint8)
+                header, encoded = image_data.split(',', 1)
+                if not encoded:
+                    print("DEBUG: Empty image string")
+                    continue
+                
+                nparr = np.frombuffer(base64.b64decode(encoded), np.uint8)
+                if nparr.size == 0:
+                    print("DEBUG: Byte array is empty")
+                    continue
+                    
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             except Exception as e:
                 print(f"DEBUG: Image decoding error: {e}")
