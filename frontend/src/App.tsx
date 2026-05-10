@@ -5,11 +5,104 @@ import {
   Languages, 
   Trash2, 
   BookOpen, 
-  Volume2
+  Volume2,
+  GraduationCap,
+  HelpCircle,
+  ListChecks,
+  RotateCcw,
+  CheckCircle2,
+  XCircle
 } from 'lucide-react';
 
 const ASL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const ISL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+type Module = 'detect' | 'learn' | 'quiz' | 'help';
+type QuizOption = {
+  letter: string;
+  isCorrect: boolean;
+};
+
+const gestureNotes: Record<string, string> = {
+  A: 'Closed hand with thumb resting beside the fingers.',
+  B: 'Flat upright palm with fingers together.',
+  C: 'Curved hand shape, like holding a cup.',
+  D: 'Index finger raised while other fingers touch the thumb.',
+  E: 'Fingers folded toward the palm.',
+  F: 'Index finger and thumb touch, other fingers raised.',
+  G: 'Index finger and thumb point sideways.',
+  H: 'Index and middle fingers extended together.',
+  I: 'Little finger raised with other fingers closed.',
+  J: 'Little finger draws a J-shaped movement.',
+  K: 'Index and middle fingers raised with thumb between them.',
+  L: 'Thumb and index finger form an L shape.',
+  M: 'Thumb tucked under three fingers.',
+  N: 'Thumb tucked under two fingers.',
+  O: 'Fingers and thumb form a rounded O shape.',
+  P: 'K-like hand shape angled downward.',
+  Q: 'G-like hand shape angled downward.',
+  R: 'Index and middle fingers crossed.',
+  S: 'Closed fist with thumb across the front.',
+  T: 'Thumb tucked between index and middle finger.',
+  U: 'Index and middle fingers raised together.',
+  V: 'Index and middle fingers raised apart.',
+  W: 'Three fingers raised to form W.',
+  X: 'Index finger bent like a hook.',
+  Y: 'Thumb and little finger extended.',
+  Z: 'Index finger draws a Z-shaped movement.'
+};
+
+const getLearningCards = (selectedMode: 'ASL' | 'ISL') =>
+  (selectedMode === 'ASL' ? ASL_ALPHABET : ISL_ALPHABET).map((letter, index) => ({
+    letter,
+    note: gestureNotes[letter],
+    tip: selectedMode === 'ASL'
+      ? `Practice ${letter} with one clear hand shape in frame.`
+      : `Practice ${letter} with ${index % 3 === 0 ? 'both hands visible when needed' : 'your hand centered and steady'}.`
+  }));
+
+const makeQuizOptions = (correct: string, alphabet: string[]): QuizOption[] => {
+  const distractors = alphabet.filter(letter => letter !== correct).sort(() => 0.5 - Math.random()).slice(0, 3);
+  return [...distractors, correct]
+    .sort(() => 0.5 - Math.random())
+    .map(letter => ({ letter, isCorrect: letter === correct }));
+};
+
+const GestureReference: React.FC<{ letter: string; mode: 'ASL' | 'ISL'; compact?: boolean }> = ({ letter, mode, compact = false }) => {
+  const seed = letter.charCodeAt(0) - 64;
+  const fingers = Array.from({ length: 5 }, (_, index) => {
+    const active = ((seed + index) % 3) !== 0;
+    const height = active ? 42 + ((seed + index * 7) % 28) : 20 + ((seed + index * 5) % 12);
+    return { active, height, x: 24 + index * 19 };
+  });
+
+  return (
+    <svg
+      viewBox="0 0 132 132"
+      role="img"
+      aria-label={`${mode} ${letter} gesture reference`}
+      className={`${compact ? 'h-24' : 'h-32'} w-full rounded-lg bg-slate-950/70`}
+    >
+      <rect x="1" y="1" width="130" height="130" rx="8" fill="#020617" stroke="#334155" />
+      {fingers.map((finger, index) => (
+        <rect
+          key={index}
+          x={finger.x}
+          y={72 - finger.height}
+          width="13"
+          height={finger.height}
+          rx="6"
+          fill={finger.active ? '#60a5fa' : '#475569'}
+        />
+      ))}
+      <rect x="28" y="66" width="72" height="42" rx="18" fill="#93c5fd" />
+      <circle cx={83} cy={82} r={11} fill={mode === 'ASL' ? '#facc15' : '#34d399'} />
+      <text x="66" y="121" textAnchor="middle" fill="#e2e8f0" fontSize="16" fontWeight="700">
+        {mode} {letter}
+      </text>
+    </svg>
+  );
+};
 
 const App: React.FC = () => {
   const [mode, setMode] = useState<'ASL' | 'ISL'>('ASL');
@@ -22,9 +115,16 @@ const App: React.FC = () => {
   const [targetLetter, setTargetLetter] = useState<string>('A');
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [processedImage, setProcessedImage] = useState<string | null>(null);
+  const [activeModule, setActiveModule] = useState<Module>('detect');
+  const [quizQuestion, setQuizQuestion] = useState<number>(0);
+  const [quizScore, setQuizScore] = useState<number>(0);
+  const [quizFeedback, setQuizFeedback] = useState<'correct' | 'wrong' | null>(null);
   
   const webcamRef = useRef<Webcam>(null);
   const ws = useRef<WebSocket | null>(null);
+  const learningCards = getLearningCards(mode);
+  const quizTarget = learningCards[quizQuestion % learningCards.length];
+  const [quizOptions, setQuizOptions] = useState<QuizOption[]>(() => makeQuizOptions('A', ASL_ALPHABET));
 
   // Initialize WebSocket
   useEffect(() => {
@@ -75,6 +175,14 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [capture]);
 
+  useEffect(() => {
+    setQuizQuestion(0);
+    setQuizScore(0);
+    setQuizFeedback(null);
+    setQuizOptions(makeQuizOptions('A', mode === 'ASL' ? ASL_ALPHABET : ISL_ALPHABET));
+    setTargetLetter('A');
+  }, [mode]);
+
   // Key Controls
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -87,6 +195,8 @@ const App: React.FC = () => {
         setSentence(prev => prev.slice(0, -1));
       } else if (e.code === 'Enter') {
         setSentence(prev => prev + ' ');
+      } else if (e.code === 'KeyQ') {
+        setMode(prev => prev === 'ASL' ? 'ISL' : 'ASL');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -116,6 +226,36 @@ const App: React.FC = () => {
     window.speechSynthesis.speak(utterance);
   };
 
+  const answerQuiz = (option: QuizOption) => {
+    if (quizFeedback) return;
+
+    if (option.isCorrect) {
+      setQuizScore(prev => prev + 1);
+      setQuizFeedback('correct');
+    } else {
+      setQuizFeedback('wrong');
+    }
+  };
+
+  const nextQuizQuestion = () => {
+    const nextIndex = (quizQuestion + 1) % learningCards.length;
+    setQuizQuestion(nextIndex);
+    setQuizFeedback(null);
+    setQuizOptions(makeQuizOptions(learningCards[nextIndex].letter, mode === 'ASL' ? ASL_ALPHABET : ISL_ALPHABET));
+  };
+
+  const resetQuiz = () => {
+    setQuizQuestion(0);
+    setQuizScore(0);
+    setQuizFeedback(null);
+    setQuizOptions(makeQuizOptions('A', mode === 'ASL' ? ASL_ALPHABET : ISL_ALPHABET));
+  };
+
+  const moduleButtonClass = (module: Module) =>
+    `flex items-center gap-2 px-4 py-2 rounded-lg transition ${
+      activeModule === module ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+    }`;
+
   return (
     <div className="min-h-screen bg-slate-900 text-white p-8 font-sans">
       <header className="flex justify-between items-center mb-8 border-b border-slate-700 pb-4">
@@ -124,6 +264,24 @@ const App: React.FC = () => {
           Multilingual Sign-to-Speech
         </h1>
         <div className="flex gap-4">
+          <div className="flex gap-2">
+            <button onClick={() => setActiveModule('detect')} className={moduleButtonClass('detect')}>
+              <Languages size={18} />
+              Detect
+            </button>
+            <button onClick={() => setActiveModule('learn')} className={moduleButtonClass('learn')}>
+              <GraduationCap size={18} />
+              Learn
+            </button>
+            <button onClick={() => setActiveModule('quiz')} className={moduleButtonClass('quiz')}>
+              <ListChecks size={18} />
+              Quiz
+            </button>
+            <button onClick={() => setActiveModule('help')} className={moduleButtonClass('help')}>
+              <HelpCircle size={18} />
+              Help
+            </button>
+          </div>
           <button 
             onClick={() => setIsTeaching(!isTeaching)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${isTeaching ? 'bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'}`}
@@ -156,6 +314,7 @@ const App: React.FC = () => {
         </div>
       </header>
 
+      {activeModule === 'detect' && (
       <main className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Camera Section */}
         <div className="relative rounded-2xl overflow-hidden bg-black aspect-video border-4 border-slate-800 shadow-2xl">
@@ -280,6 +439,154 @@ const App: React.FC = () => {
           </div>
         </div>
       </main>
+      )}
+
+      {activeModule === 'learn' && (
+        <main className="space-y-6">
+          <section className="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-lg">
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+              <div>
+                <h2 className="text-3xl font-black">{mode} Alphabet Learning Module</h2>
+                <p className="text-slate-400 mt-2 max-w-3xl">
+                  Study each alphabet sign, review the visual reference, then switch to Teaching Module or Quiz to practice recognition.
+                </p>
+              </div>
+              <button onClick={() => setIsTeaching(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 transition">
+                <BookOpen size={18} />
+                Practice Selected Mode
+              </button>
+            </div>
+          </section>
+
+          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {learningCards.map(card => (
+              <article key={card.letter} className="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-4xl font-black text-blue-300">{card.letter}</span>
+                  <button
+                    onClick={() => {
+                      setTargetLetter(card.letter);
+                      setIsTeaching(true);
+                    }}
+                    className="px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 text-sm transition"
+                  >
+                    Practice
+                  </button>
+                </div>
+                <GestureReference letter={card.letter} mode={mode} />
+                <p className="mt-3 text-sm text-slate-200">{card.note}</p>
+                <p className="mt-2 text-xs text-slate-400">{card.tip}</p>
+              </article>
+            ))}
+          </section>
+        </main>
+      )}
+
+      {activeModule === 'quiz' && (
+        <main className="grid grid-cols-1 lg:grid-cols-[0.9fr_1.1fr] gap-8">
+          <section className="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-lg">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-3xl font-black">{mode} Quiz</h2>
+                <p className="text-slate-400 mt-1">Question {quizQuestion + 1} of {learningCards.length}</p>
+              </div>
+              <button onClick={resetQuiz} className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition">
+                <RotateCcw size={20} />
+              </button>
+            </div>
+
+            <GestureReference letter={quizTarget.letter} mode={mode} />
+            <p className="mt-5 text-slate-300">Which alphabet does this reference card represent?</p>
+
+            <div className="grid grid-cols-2 gap-3 mt-5">
+              {quizOptions.map(option => {
+                const showResult = quizFeedback && option.isCorrect;
+                const showWrong = quizFeedback === 'wrong' && !option.isCorrect;
+                return (
+                  <button
+                    key={option.letter}
+                    onClick={() => answerQuiz(option)}
+                    className={`h-16 rounded-xl border text-2xl font-black transition ${
+                      showResult
+                        ? 'bg-green-500/20 border-green-400 text-green-200'
+                        : showWrong
+                          ? 'bg-red-500/10 border-red-500/40 text-red-200'
+                          : 'bg-slate-900 border-slate-700 hover:border-blue-400'
+                    }`}
+                  >
+                    {option.letter}
+                  </button>
+                );
+              })}
+            </div>
+
+            {quizFeedback && (
+              <div className="mt-5 flex items-center justify-between gap-4 bg-slate-900 border border-slate-700 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  {quizFeedback === 'correct' ? <CheckCircle2 className="text-green-400" /> : <XCircle className="text-red-400" />}
+                  <span className="font-bold">
+                    {quizFeedback === 'correct' ? 'Correct answer' : `Correct answer: ${quizTarget.letter}`}
+                  </span>
+                </div>
+                <button onClick={nextQuizQuestion} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 transition">
+                  Next
+                </button>
+              </div>
+            )}
+          </section>
+
+          <section className="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-lg">
+            <h3 className="text-slate-400 font-bold uppercase text-xs tracking-widest mb-4">Quiz Progress</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-900 rounded-xl p-5 border border-slate-700">
+                <p className="text-slate-500 text-sm">Score</p>
+                <p className="text-5xl font-black text-blue-300 mt-2">{quizScore}</p>
+              </div>
+              <div className="bg-slate-900 rounded-xl p-5 border border-slate-700">
+                <p className="text-slate-500 text-sm">Mode</p>
+                <p className="text-5xl font-black text-blue-300 mt-2">{mode}</p>
+              </div>
+            </div>
+            <div className="mt-6 space-y-3">
+              <p className="text-slate-300">Use the quiz after reviewing the learning module. The visual cards are generated references, and the live model feedback is available in Teaching Module.</p>
+              <button onClick={() => setActiveModule('learn')} className="w-full px-4 py-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition">
+                Review Alphabet Module
+              </button>
+            </div>
+          </section>
+        </main>
+      )}
+
+      {activeModule === 'help' && (
+        <main className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {[
+            {
+              title: 'Detection',
+              items: ['Keep your hand centered in the webcam frame.', 'Use Space to capture the current prediction.', 'Use Enter to add a space and Backspace to delete.', 'Use Q or the ASL/ISL buttons to switch modes.']
+            },
+            {
+              title: 'Learning',
+              items: ['Open Learn to review all alphabet references.', 'Use Practice on any card to open live feedback.', 'Match your gesture with the target letter in Teaching Module.', 'Use steady lighting for clearer landmarks.']
+            },
+            {
+              title: 'Translation & Speech',
+              items: ['Build a sentence from detected letters.', 'Choose Hindi, Spanish, French, or German.', 'Use the translate icon to translate the sentence.', 'Use the speaker icon to hear original or translated text.']
+            }
+          ].map(section => (
+            <section key={section.title} className="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-lg">
+              <h2 className="text-2xl font-black mb-4">{section.title}</h2>
+              <div className="space-y-3">
+                {section.items.map(item => (
+                  <div key={item} className="flex gap-3 text-slate-300">
+                    <CheckCircle2 size={18} className="text-blue-400 mt-1 shrink-0" />
+                    <p>{item}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </main>
+      )}
 
       {/* Teaching Module Overlay */}
       {isTeaching && (
@@ -304,7 +611,7 @@ const App: React.FC = () => {
                 {targetLetter}
               </div>
               <div className="mt-8 flex gap-2 overflow-x-auto p-4 w-full justify-center">
-                {(mode === 'ASL' ? ASL_ALPHABET : ISL_ALPHABET).slice(0, 10).map(char => (
+                {(mode === 'ASL' ? ASL_ALPHABET : ISL_ALPHABET).map(char => (
                   <button 
                     key={char}
                     onClick={() => setTargetLetter(char)}
@@ -335,7 +642,7 @@ const App: React.FC = () => {
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 {prediction === targetLetter ? (
                   <div className="bg-green-500/20 border-4 border-green-500 backdrop-blur-md p-12 rounded-full animate-bounce">
-                    <span className="text-8xl">✅</span>
+                    <span className="text-5xl font-black text-green-100">Correct</span>
                   </div>
                 ) : (
                   <div className="bg-white/5 border-2 border-white/20 backdrop-blur-md p-8 rounded-2xl flex flex-col items-center">
