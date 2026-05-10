@@ -52,6 +52,7 @@ async def websocket_endpoint(websocket: WebSocket):
             # Extract image and mode
             image_data = message.get("image")
             mode = message.get("mode", "ASL")
+            include_image = bool(message.get("include_image", False))
             
             if not image_data or ',' not in image_data:
                 print("DEBUG: Received malformed image data")
@@ -82,13 +83,11 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 letter, confidence, processed_frame = predictor.predict(frame, mode=mode)
                 
-                # Encode the processed frame back to base64
-                _, buffer = cv2.imencode('.jpg', processed_frame)
-                processed_image_data = base64.b64encode(buffer).decode('utf-8')
-                processed_image_b64 = f"data:image/jpeg;base64,{processed_image_data}"
-                
-                if letter:
-                    print(f"DEBUG: Predicted {letter} with {confidence:.2f}")
+                processed_image_b64 = None
+                if include_image:
+                    _, buffer = cv2.imencode('.jpg', processed_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+                    processed_image_data = base64.b64encode(buffer).decode('utf-8')
+                    processed_image_b64 = f"data:image/jpeg;base64,{processed_image_data}"
             except Exception as e:
                 print(f"DEBUG: Prediction error: {e}")
                 continue

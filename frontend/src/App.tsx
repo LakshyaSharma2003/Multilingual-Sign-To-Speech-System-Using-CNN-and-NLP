@@ -119,9 +119,16 @@ const App: React.FC = () => {
   const [quizQuestion, setQuizQuestion] = useState<number>(0);
   const [quizScore, setQuizScore] = useState<number>(0);
   const [quizFeedback, setQuizFeedback] = useState<'correct' | 'wrong' | null>(null);
+  const [teachingStreak, setTeachingStreak] = useState<number>(0);
+  const [bestTeachingStreak, setBestTeachingStreak] = useState<number>(0);
+  const [teachingAttempts, setTeachingAttempts] = useState<number>(0);
   
   const webcamRef = useRef<Webcam>(null);
   const ws = useRef<WebSocket | null>(null);
+  const awaitingPrediction = useRef<boolean>(false);
+  const sentFrameCount = useRef<number>(0);
+  const predictionTimeout = useRef<number | null>(null);
+  const lastTeachingHit = useRef<string>('');
   const learningCards = getLearningCards(mode);
   const quizTarget = learningCards[quizQuestion % learningCards.length];
   const [quizOptions, setQuizOptions] = useState<QuizOption[]>(() => makeQuizOptions('A', ASL_ALPHABET));
@@ -133,13 +140,28 @@ const App: React.FC = () => {
       ws.current = new WebSocket('ws://localhost:8000/ws/predict');
       
       ws.current.onopen = () => setWsStatus('connected');
-      ws.current.onerror = () => setWsStatus('error');
+      ws.current.onerror = () => {
+        awaitingPrediction.current = false;
+        if (predictionTimeout.current) {
+          window.clearTimeout(predictionTimeout.current);
+        }
+        setWsStatus('error');
+      };
       ws.current.onclose = () => {
+        awaitingPrediction.current = false;
+        if (predictionTimeout.current) {
+          window.clearTimeout(predictionTimeout.current);
+        }
         setWsStatus('connecting');
         setTimeout(connect, 3000); // Reconnect after 3s
       };
 
       ws.current.onmessage = (event) => {
+        awaitingPrediction.current = false;
+        if (predictionTimeout.current) {
+          window.clearTimeout(predictionTimeout.current);
+          predictionTimeout.current = null;
+        }
         const data = JSON.parse(event.data);
         setPrediction(data.letter || '');
         setConfidence(data.confidence || 0);
@@ -158,20 +180,28 @@ const App: React.FC = () => {
 
   // Frame Capture and Sending
   const capture = useCallback(() => {
-    if (webcamRef.current && ws.current?.readyState === WebSocket.OPEN) {
-      const imageSrc = webcamRef.current.getScreenshot();
+    const shouldStream = activeModule === 'detect' || isTeaching;
+
+    if (shouldStream && webcamRef.current && ws.current?.readyState === WebSocket.OPEN && !awaitingPrediction.current) {
+      const imageSrc = webcamRef.current.getScreenshot({ width: 424, height: 318 });
       if (imageSrc) {
-        // console.log("Sending frame..."); // Debug
+        sentFrameCount.current += 1;
+        awaitingPrediction.current = true;
         ws.current.send(JSON.stringify({
           image: imageSrc,
-          mode: mode
+          mode: mode,
+          include_image: sentFrameCount.current % 3 === 0
         }));
+        predictionTimeout.current = window.setTimeout(() => {
+          awaitingPrediction.current = false;
+          predictionTimeout.current = null;
+        }, 1200);
       }
     }
-  }, [mode]);
+  }, [activeModule, isTeaching, mode]);
 
   useEffect(() => {
-    const interval = setInterval(capture, 100); // 10 FPS
+    const interval = setInterval(capture, 120);
     return () => clearInterval(interval);
   }, [capture]);
 
@@ -181,7 +211,32 @@ const App: React.FC = () => {
     setQuizFeedback(null);
     setQuizOptions(makeQuizOptions('A', mode === 'ASL' ? ASL_ALPHABET : ISL_ALPHABET));
     setTargetLetter('A');
+    setTeachingStreak(0);
+    setTeachingAttempts(0);
+    lastTeachingHit.current = '';
   }, [mode]);
+
+  useEffect(() => {
+    lastTeachingHit.current = '';
+    setTeachingStreak(0);
+  }, [targetLetter]);
+
+  useEffect(() => {
+    const isMatch = isTeaching && prediction === targetLetter && confidence >= 0.65;
+
+    if (isMatch && lastTeachingHit.current !== targetLetter) {
+      lastTeachingHit.current = targetLetter;
+      setTeachingAttempts(prev => prev + 1);
+      setTeachingStreak(prev => {
+        const next = prev + 1;
+        setBestTeachingStreak(best => Math.max(best, next));
+        return next;
+      });
+    } else if (!isMatch && prediction && prediction !== targetLetter) {
+      lastTeachingHit.current = '';
+      setTeachingStreak(0);
+    }
+  }, [confidence, isTeaching, prediction, targetLetter]);
 
   // Key Controls
   useEffect(() => {
@@ -322,10 +377,11 @@ const App: React.FC = () => {
             audio={false}
             ref={webcamRef}
             screenshotFormat="image/jpeg"
+            screenshotQuality={0.55}
             className="w-full h-full object-cover"
             videoConstraints={{ 
-              width: 640,
-              height: 480,
+              width: 424,
+              height: 318,
               facingMode: "user" 
             }}
           />
@@ -590,11 +646,26 @@ const App: React.FC = () => {
 
       {/* Teaching Module Overlay */}
       {isTeaching && (
-        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-lg z-50 flex flex-col p-12">
-          <div className="flex justify-between items-center mb-12">
+        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-lg z-50 flex flex-col p-8 overflow-y-auto">
+          <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-8">
             <div>
+              <p className="text-blue-300 font-bold uppercase tracking-widest text-xs mb-2">Live practice arena</p>
               <h2 className="text-4xl font-black mb-2">{mode} Teaching Module</h2>
-              <p className="text-slate-400">Master {mode} gestures through real-time feedback</p>
+              <p className="text-slate-400">Match the target, hold your hand steady, and build a streak with real-time model feedback.</p>
+            </div>
+            <div className="grid grid-cols-3 gap-3 min-w-[360px]">
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <p className="text-slate-500 text-xs uppercase font-bold">Streak</p>
+                <p className="text-3xl font-black text-green-300">{teachingStreak}</p>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <p className="text-slate-500 text-xs uppercase font-bold">Best</p>
+                <p className="text-3xl font-black text-blue-300">{bestTeachingStreak}</p>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <p className="text-slate-500 text-xs uppercase font-bold">Hits</p>
+                <p className="text-3xl font-black text-yellow-300">{teachingAttempts}</p>
+              </div>
             </div>
             <button 
               onClick={() => setIsTeaching(false)}
@@ -604,31 +675,79 @@ const App: React.FC = () => {
             </button>
           </div>
 
-          <div className="flex-1 grid grid-cols-3 gap-12">
-            <div className="col-span-1 flex flex-col items-center justify-center bg-slate-900 rounded-3xl border border-slate-800 p-8 shadow-inner">
-              <span className="text-slate-500 font-bold uppercase tracking-widest text-sm mb-4">Target Gesture</span>
-              <div className="text-[12rem] font-black leading-none text-blue-500 drop-shadow-[0_0_30px_rgba(59,130,246,0.5)]">
-                {targetLetter}
+          <div className="flex-1 grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-8 min-h-[640px]">
+            <aside className="flex flex-col gap-5">
+              <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 shadow-inner">
+                <span className="text-slate-500 font-bold uppercase tracking-widest text-sm">Target Gesture</span>
+                <div className="mt-4 grid grid-cols-[1fr_120px] gap-4 items-center">
+                  <div className="text-[9rem] font-black leading-none text-blue-500 drop-shadow-[0_0_30px_rgba(59,130,246,0.45)]">
+                    {targetLetter}
+                  </div>
+                  <GestureReference letter={targetLetter} mode={mode} compact />
+                </div>
+                <p className="text-sm text-slate-300 mt-4">{gestureNotes[targetLetter]}</p>
+                <div className="mt-5 h-3 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                  <div
+                    className={`h-full transition-all duration-300 ${prediction === targetLetter ? 'bg-green-400' : 'bg-blue-500'}`}
+                    style={{ width: `${prediction === targetLetter ? confidence * 100 : Math.min(confidence * 45, 45)}%` }}
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  Current confidence: {(confidence * 100).toFixed(1)}%
+                </p>
               </div>
-              <div className="mt-8 flex gap-2 overflow-x-auto p-4 w-full justify-center">
+
+              <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-slate-300 font-bold">Choose Letter</h3>
+                  <button
+                    onClick={() => {
+                      const alphabet = mode === 'ASL' ? ASL_ALPHABET : ISL_ALPHABET;
+                      const current = alphabet.indexOf(targetLetter);
+                      setTargetLetter(alphabet[(current + 1) % alphabet.length]);
+                    }}
+                    className="px-3 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-sm transition"
+                  >
+                    Next
+                  </button>
+                </div>
+                <div className="grid grid-cols-6 gap-2">
                 {(mode === 'ASL' ? ASL_ALPHABET : ISL_ALPHABET).map(char => (
                   <button 
                     key={char}
                     onClick={() => setTargetLetter(char)}
-                    className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold transition ${targetLetter === char ? 'bg-blue-600 scale-110 shadow-lg' : 'bg-slate-800 hover:bg-slate-700'}`}
+                    className={`h-10 rounded-lg flex items-center justify-center font-bold transition ${
+                      targetLetter === char ? 'bg-blue-600 scale-105 shadow-lg' : 'bg-slate-800 hover:bg-slate-700'
+                    }`}
                   >
                     {char}
                   </button>
                 ))}
+                </div>
               </div>
-            </div>
 
-            <div className="col-span-2 relative rounded-3xl overflow-hidden border-8 border-slate-900 shadow-2xl bg-black">
+              <div className="bg-blue-600/10 rounded-2xl border border-blue-500/30 p-5">
+                <h3 className="font-bold text-blue-300 mb-3">Practice Loop</h3>
+                <div className="space-y-2 text-sm text-blue-100/80">
+                  <p>1. Pick a target letter.</p>
+                  <p>2. Hold the gesture until the match turns green.</p>
+                  <p>3. Move to the next letter and keep the streak alive.</p>
+                </div>
+              </div>
+            </aside>
+
+            <section className="relative rounded-3xl overflow-hidden border-8 border-slate-900 shadow-2xl bg-black min-h-[620px]">
               <Webcam
                 audio={false}
                 ref={webcamRef}
                 screenshotFormat="image/jpeg"
+                screenshotQuality={0.55}
                 className="w-full h-full object-cover grayscale opacity-50"
+                videoConstraints={{
+                  width: 424,
+                  height: 318,
+                  facingMode: "user"
+                }}
               />
               
               {processedImage && (
@@ -641,27 +760,31 @@ const App: React.FC = () => {
 
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 {prediction === targetLetter ? (
-                  <div className="bg-green-500/20 border-4 border-green-500 backdrop-blur-md p-12 rounded-full animate-bounce">
-                    <span className="text-5xl font-black text-green-100">Correct</span>
+                  <div className="bg-green-500/20 border-4 border-green-500 backdrop-blur-md px-12 py-8 rounded-3xl shadow-[0_0_40px_rgba(34,197,94,0.35)]">
+                    <span className="text-6xl font-black text-green-100">Correct</span>
+                    <p className="text-center text-green-200 mt-2">Hold steady, then try the next letter.</p>
                   </div>
                 ) : (
-                  <div className="bg-white/5 border-2 border-white/20 backdrop-blur-md p-8 rounded-2xl flex flex-col items-center">
-                    <span className="text-slate-400 font-medium mb-2">You are signing</span>
-                    <span className="text-6xl font-black text-white">{prediction || '?'}</span>
+                  <div className="bg-white/5 border-2 border-white/20 backdrop-blur-md p-8 rounded-2xl flex flex-col items-center min-w-[240px]">
+                    <span className="text-slate-400 font-medium mb-2">Detected</span>
+                    <span className="text-7xl font-black text-white">{prediction || '?'}</span>
+                    <span className="text-sm text-slate-400 mt-2">Target: {targetLetter}</span>
                   </div>
                 )}
                 
-                <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-full max-w-md">
+                <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-full max-w-lg px-4">
                    <div className="h-4 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
                       <div 
-                        className="h-full bg-green-500 transition-all duration-300" 
+                        className={`h-full transition-all duration-300 ${prediction === targetLetter ? 'bg-green-500' : 'bg-blue-500'}`}
                         style={{ width: `${prediction === targetLetter ? confidence * 100 : 0}%` }} 
                       />
                    </div>
-                   <p className="text-center mt-3 font-bold text-slate-400">Match Accuracy</p>
+                   <p className="text-center mt-3 font-bold text-slate-300">
+                    {prediction === targetLetter ? 'Match Accuracy' : 'Waiting for target match'}
+                   </p>
                 </div>
               </div>
-            </div>
+            </section>
           </div>
         </div>
       )}
