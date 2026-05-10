@@ -736,52 +736,66 @@ const App: React.FC = () => {
               </div>
             </aside>
 
-            <section className="relative rounded-3xl overflow-hidden border-8 border-slate-900 shadow-2xl bg-black min-h-[620px]">
-              <Webcam
-                audio={false}
-                ref={webcamRef}
-                screenshotFormat="image/jpeg"
-                screenshotQuality={0.55}
-                className="w-full h-full object-cover grayscale opacity-50"
-                videoConstraints={{
-                  width: 424,
-                  height: 318,
-                  facingMode: "user"
-                }}
-              />
-              
-              {processedImage && (
-                <img 
-                  src={processedImage} 
-                  alt="Processed Feed" 
-                  className="absolute inset-0 w-full h-full object-cover grayscale opacity-50"
+            <section className="rounded-3xl border border-slate-800 shadow-2xl bg-slate-950 p-5 min-h-[620px] flex items-center justify-center">
+              <div className="relative w-full max-w-5xl aspect-[4/3] overflow-hidden rounded-2xl bg-black border border-slate-700 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+                <Webcam
+                  audio={false}
+                  ref={webcamRef}
+                  screenshotFormat="image/jpeg"
+                  screenshotQuality={0.55}
+                  className="absolute inset-0 w-full h-full object-contain bg-black"
+                  videoConstraints={{
+                    width: 424,
+                    height: 318,
+                    facingMode: "user"
+                  }}
                 />
-              )}
-
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                {prediction === targetLetter ? (
-                  <div className="bg-green-500/20 border-4 border-green-500 backdrop-blur-md px-12 py-8 rounded-3xl shadow-[0_0_40px_rgba(34,197,94,0.35)]">
-                    <span className="text-6xl font-black text-green-100">Correct</span>
-                    <p className="text-center text-green-200 mt-2">Hold steady, then try the next letter.</p>
-                  </div>
-                ) : (
-                  <div className="bg-white/5 border-2 border-white/20 backdrop-blur-md p-8 rounded-2xl flex flex-col items-center min-w-[240px]">
-                    <span className="text-slate-400 font-medium mb-2">Detected</span>
-                    <span className="text-7xl font-black text-white">{prediction || '?'}</span>
-                    <span className="text-sm text-slate-400 mt-2">Target: {targetLetter}</span>
-                  </div>
-                )}
                 
-                <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-full max-w-lg px-4">
-                   <div className="h-4 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
-                      <div 
-                        className={`h-full transition-all duration-300 ${prediction === targetLetter ? 'bg-green-500' : 'bg-blue-500'}`}
-                        style={{ width: `${prediction === targetLetter ? confidence * 100 : 0}%` }} 
-                      />
-                   </div>
-                   <p className="text-center mt-3 font-bold text-slate-300">
+                {processedImage && (
+                  <img 
+                    src={processedImage} 
+                    alt="Processed Feed" 
+                    className="absolute inset-0 w-full h-full object-contain bg-black"
+                  />
+                )}
+
+                <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-black/20 via-transparent to-black/45" />
+
+                <div className="absolute top-4 left-4 flex items-center gap-3 rounded-full bg-black/55 border border-white/15 px-4 py-2 backdrop-blur-md">
+                  <div className={`h-3 w-3 rounded-full ${prediction === targetLetter ? 'bg-green-400' : 'bg-blue-400'}`} />
+                  <span className="text-sm font-bold text-white">{mode} Live Practice</span>
+                </div>
+
+                <div className="absolute top-4 right-4 rounded-2xl bg-black/55 border border-white/15 px-5 py-3 backdrop-blur-md text-right">
+                  <p className="text-xs uppercase tracking-widest text-slate-300">Target</p>
+                  <p className="text-4xl font-black text-blue-200">{targetLetter}</p>
+                </div>
+
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  {prediction === targetLetter ? (
+                    <div className="bg-green-500/20 border-4 border-green-500 backdrop-blur-md px-12 py-8 rounded-3xl shadow-[0_0_40px_rgba(34,197,94,0.35)]">
+                      <span className="text-6xl font-black text-green-100">Correct</span>
+                      <p className="text-center text-green-200 mt-2">Hold steady, then try the next letter.</p>
+                    </div>
+                  ) : (
+                    <div className="bg-black/45 border border-white/20 backdrop-blur-md px-8 py-6 rounded-2xl flex flex-col items-center min-w-[220px]">
+                      <span className="text-slate-300 font-medium mb-2">Detected</span>
+                      <span className="text-7xl font-black text-white">{prediction || '?'}</span>
+                      <span className="text-sm text-slate-300 mt-2">Target: {targetLetter}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-lg px-4">
+                  <div className="h-4 bg-black/60 rounded-full overflow-hidden border border-white/15 backdrop-blur-md">
+                    <div 
+                      className={`h-full transition-all duration-300 ${prediction === targetLetter ? 'bg-green-500' : 'bg-blue-500'}`}
+                      style={{ width: `${prediction === targetLetter ? confidence * 100 : 0}%` }} 
+                    />
+                  </div>
+                  <p className="text-center mt-3 font-bold text-slate-100 drop-shadow">
                     {prediction === targetLetter ? 'Match Accuracy' : 'Waiting for target match'}
-                   </p>
+                  </p>
                 </div>
               </div>
             </section>
